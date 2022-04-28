@@ -291,11 +291,21 @@ simple_seq_fit_impl<MutexFamily, VoidPointer>
    ::priv_first_block_offset(const void *this_ptr, size_type extra_hdr_bytes)
 {
    //First align "this" pointer
-   size_type uint_this         = (std::size_t)this_ptr;
-   size_type uint_aligned_this = uint_this/Alignment*Alignment;
-   size_type this_disalignment = (uint_this - uint_aligned_this);
+   size_type uint_this /* u */       = (std::size_t)this_ptr;
+   size_type uint_aligned_this /* ua */ = uint_this/Alignment*Alignment;
+   size_type this_disalignment  /* d */ = (uint_this - uint_aligned_this);
+
+   /* this_disalignment 差值参与对齐计算，这样可以保证 uint_this可以被正常对齐 */
+   /*  |      |            |  |              | */
+   /*  ua- d- u  -(len+ ext)- |                */
+   /*  | - align         - |                 |  */ 
+   /*                      |<d|                */
+
+   /* 如果 sizeof(simple_seq_fit_impl) + extra_hdr_bytes 上图(len+ext) < (align - d) */
+   /*  对齐只能算出一个 align 为了让 u 正常对齐， 应该让d 也参与对齐计算 有两align 保证正常对齐 */
+
    size_type block1_off =
-      ipcdetail::get_rounded_size(sizeof(simple_seq_fit_impl) + extra_hdr_bytes + this_disalignment, Alignment) //差值参加计算 保证对齐没问题
+      ipcdetail::get_rounded_size(sizeof(simple_seq_fit_impl) + extra_hdr_bytes + this_disalignment, Alignment) 
       - this_disalignment;
    algo_impl_t::assert_alignment(this_disalignment + block1_off);
    return block1_off;
