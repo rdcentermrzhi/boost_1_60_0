@@ -774,6 +774,8 @@ void * simple_seq_fit_impl<MutexFamily, VoidPointer>::
                 ,size_type limit_size, size_type &prefer_in_recvd_out_size, void *&reuse_ptr)
 {
    size_type const preferred_size = prefer_in_recvd_out_size;
+
+   /* 收缩内存 */
    if(command & boost::interprocess::shrink_in_place){
       if(!reuse_ptr)  return static_cast<void*>(0);
       bool success = algo_impl_t::shrink(this, reuse_ptr, limit_size, prefer_in_recvd_out_size);
@@ -999,22 +1001,25 @@ void* simple_seq_fit_impl<MutexFamily, VoidPointer>::priv_check_and_allocate
    bool found = false;
 
    if (block->m_size > upper_nunits){
+       /* 剩余内存大小大于所需内存nunits + 内存管理块的内存 切分成2个block */
       //This block is bigger than needed, split it in
       //two blocks, the first's size will be "units"
       //the second's size will be "block->m_size-units"
-      size_type total_size = block->m_size;
+       size_type total_size = block->m_size;
       block->m_size  = nunits;
-
+      /* 第一块block->size为分配内存的大小 */
       block_ctrl *new_block = reinterpret_cast<block_ctrl*>
          (reinterpret_cast<char*>(block) + Alignment*nunits);
       new_block->m_size  = total_size - nunits;
       new_block->m_next  = block->m_next;
       prev->m_next = new_block;
+      /* 第二个block->size 为剩余内存,将第二块block 放入链表，第一块block同时也被移除 */
       found = true;
    }
    else if (block->m_size >= nunits){
       //This block has exactly the right size with an extra
       //unusable extra bytes.
+      /* 如果分配后的大小不够一个block_ctrl  那么直接从链表中移除当前block */
       prev->m_next = block->m_next;
       found = true;
    }
@@ -1077,9 +1082,13 @@ void simple_seq_fit_impl<MutexFamily, VoidPointer>::priv_deallocate(void* addr)
       pos = ipcdetail::to_raw_pointer(pos->m_next);
    }
 
+   /**
+    * 将连续内存合并起来管理.
+    */
    //Try to combine with upper block
    char *block_char_ptr = reinterpret_cast<char*>(ipcdetail::to_raw_pointer(block));
 
+   /* 如果内存地址连续下一块block 也没有被分配 直接合并到 一个block中 */
    if ((block_char_ptr + Alignment*block->m_size) ==
          reinterpret_cast<char*>(ipcdetail::to_raw_pointer(pos))){
       block->m_size += pos->m_size;
@@ -1089,6 +1098,7 @@ void simple_seq_fit_impl<MutexFamily, VoidPointer>::priv_deallocate(void* addr)
       block->m_next = pos;
    }
 
+   /* 如果内存地址连续上一块block 也没有被分配 直接合并到 一个block中 */
    //Try to combine with lower block
    if ((reinterpret_cast<char*>(ipcdetail::to_raw_pointer(prev))
             + Alignment*prev->m_size) ==
